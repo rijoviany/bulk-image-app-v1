@@ -33,15 +33,21 @@ export function FieldPlacer() {
     setCanvasSize({ w, h: Math.round(w * aspect) });
   }, [template]);
 
+  // Keep a valid active selection: if selectedId doesn't exist, default to the first placement
+  const activeSelectedId = (selectedId && placements.some((p) => p.id === selectedId))
+    ? selectedId
+    : (placements[0]?.id ?? null);
+
   const allFonts = [...BUILT_IN_FONTS, ...customFonts.map((f) => f.name)];
   const currentRecord = records[previewIndex] ?? {};
-  const selected = placements.find((p) => p.id === selectedId) ?? null;
+  const selected = placements.find((p) => p.id === activeSelectedId) ?? null;
 
   const addField = useCallback(
     (field: string) => {
       const existingCount = placements.filter((p) => p.field === field).length;
+      const newId = `${field}-${Date.now()}-${existingCount}`;
       const placement: FieldPlacement = {
-        id: `${field}-${Date.now()}-${existingCount}`,
+        id: newId,
         field,
         x: Math.round(canvasSize.w / 2),
         y: Math.min(canvasSize.h - 50, 80 + placements.length * 45),
@@ -51,17 +57,20 @@ export function FieldPlacer() {
         align: 'center',
       };
       addPlacement(placement);
-      setSelectedId(placement.id);
+      setSelectedId(newId);
     },
     [addPlacement, allFonts, canvasSize, placements],
   );
 
   const autoPlaceAll = useCallback(() => {
+    let firstId: string | null = null;
     headers.forEach((h, idx) => {
       const alreadyPlaced = placements.some((p) => p.field === h);
       if (!alreadyPlaced) {
+        const newId = `${h}-${Date.now()}-${idx}`;
+        if (!firstId) firstId = newId;
         addPlacement({
-          id: `${h}-${Date.now()}-${idx}`,
+          id: newId,
           field: h,
           x: Math.round(canvasSize.w / 2),
           y: Math.round((canvasSize.h / (headers.length + 1)) * (idx + 1)),
@@ -72,11 +81,13 @@ export function FieldPlacer() {
         });
       }
     });
+    if (firstId) {
+      setSelectedId(firstId);
+    }
   }, [headers, placements, addPlacement, canvasSize]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent, id: string) => {
-      e.preventDefault();
       e.stopPropagation();
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -131,7 +142,7 @@ export function FieldPlacer() {
           <div>
             <h3 className="text-sm font-semibold text-neutral-900">Add Available CSV Fields</h3>
             <p className="text-xs text-neutral-500">
-              Click any column below to add its placeholder to the template canvas. Drag to position.
+              Click any column below to add its placeholder to the template canvas. Click a placeholder to edit its font, size & color.
             </p>
           </div>
           {headers.length > 0 && (
@@ -181,7 +192,6 @@ export function FieldPlacer() {
             }}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onClick={() => setSelectedId(null)}
           >
             {/* Background Template */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -195,7 +205,7 @@ export function FieldPlacer() {
             {/* Placed Dynamic Fields */}
             {placements.map((p) => {
               const displayText = currentRecord[p.field] || `{${p.field}}`;
-              const isSelected = selectedId === p.id;
+              const isSelected = activeSelectedId === p.id;
 
               // Transform for exact anchor alignment
               let transform = 'translate(0, 0)';
@@ -205,11 +215,15 @@ export function FieldPlacer() {
               return (
                 <div
                   key={p.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(p.id);
+                  }}
                   onPointerDown={(e) => onPointerDown(e, p.id)}
-                  className={`absolute cursor-grab active:cursor-grabbing whitespace-nowrap transition-shadow rounded-sm ${
+                  className={`absolute cursor-grab active:cursor-grabbing whitespace-nowrap transition-all rounded-sm ${
                     isSelected
-                      ? 'ring-2 ring-blue-600 ring-offset-2 z-30 shadow-lg'
-                      : 'hover:ring-1 hover:ring-blue-400 z-20'
+                      ? 'ring-3 ring-blue-600 ring-offset-2 z-30 shadow-xl'
+                      : 'hover:ring-2 hover:ring-blue-400 z-20 cursor-pointer'
                   }`}
                   style={{
                     left: `${p.x}px`,
@@ -225,30 +239,42 @@ export function FieldPlacer() {
                     fontWeight: p.fontFamily.includes('Bold') ? 'bold' : 'normal',
                     fontStyle: p.fontFamily.includes('Oblique') || p.fontFamily.includes('Italic') ? 'italic' : 'normal',
                     lineHeight: 1,
-                    padding: '3px 8px',
-                    backgroundColor: isSelected ? 'rgba(239, 246, 255, 0.85)' : 'rgba(255, 255, 255, 0.65)',
-                    backdropFilter: 'blur(2px)',
-                    border: isSelected ? '1px solid #3b82f6' : '1px dashed rgba(100, 116, 139, 0.4)',
+                    padding: '4px 10px',
+                    backgroundColor: isSelected ? 'rgba(239, 246, 255, 0.92)' : 'rgba(255, 255, 255, 0.75)',
+                    backdropFilter: 'blur(3px)',
+                    border: isSelected ? '2px solid #2563eb' : '1px dashed rgba(71, 85, 105, 0.5)',
                   }}
                 >
-                  {displayText}
+                  <span className="flex items-center gap-1.5">
+                    {isSelected && (
+                      <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+                    )}
+                    {displayText}
+                  </span>
                 </div>
               );
             })}
           </div>
 
           <div className="flex items-center justify-between w-full max-w-[860px] text-xs text-neutral-400 mt-2 px-1">
-            <span>Click & drag fields to position. Click empty area to deselect.</span>
+            <span>Click any placeholder to inspect & edit font, size and color. Drag to position.</span>
             <span>Canvas size: {canvasSize.w} × {canvasSize.h}px</span>
           </div>
         </div>
 
         {/* Right-Side Properties Inspector */}
-        <div className="w-full xl:w-72 rounded-xl border border-neutral-200/80 bg-white p-5 shadow-xs space-y-4">
+        <div className="w-full xl:w-80 rounded-xl border border-neutral-200/80 bg-white p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-            <h3 className="text-sm font-semibold text-neutral-900">
-              {selected ? `Field: {${selected.field}}` : 'Field Properties'}
-            </h3>
+            <div>
+              <h3 className="text-sm font-bold text-neutral-900">
+                Field Properties
+              </h3>
+              {selected && (
+                <p className="text-[11px] text-blue-600 font-mono font-medium">
+                  {`{${selected.field}}`}
+                </p>
+              )}
+            </div>
             {selected && (
               <button
                 type="button"
@@ -256,26 +282,46 @@ export function FieldPlacer() {
                   removePlacement(selected.id);
                   setSelectedId(null);
                 }}
-                className="text-xs text-red-600 hover:text-red-800 font-medium cursor-pointer"
+                className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors cursor-pointer"
               >
-                Delete
+                Delete Field
               </button>
             )}
           </div>
 
+          {/* Quick Field Selector Dropdown if multiple fields exist */}
+          {placements.length > 0 && (
+            <div className="bg-neutral-50 p-2.5 rounded-lg border border-neutral-200/80 space-y-1">
+              <label className="block text-[11px] font-semibold text-neutral-600">
+                Active Field ({placements.length} placed)
+              </label>
+              <select
+                value={selected?.id || ''}
+                onChange={(e) => setSelectedId(e.target.value)}
+                className="w-full rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-800 font-medium shadow-2xs focus:border-blue-500 focus:outline-hidden"
+              >
+                {placements.map((p, idx) => (
+                  <option key={p.id} value={p.id}>
+                    #{idx + 1}: {`{${p.field}}`} ({p.fontSize}px, {p.fontFamily})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {!selected ? (
             <div className="py-8 text-center text-xs text-neutral-400">
-              Select or add a field on the canvas to customize its typography, color, size, and coordinates.
+              No fields placed on the canvas yet. Click any field button above or &quot;Auto-Place All Fields&quot; to begin.
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* Font Family */}
+            <div className="space-y-4 pt-1">
+              {/* Typeface Selection */}
               <div>
-                <label className="mb-1 block text-xs font-semibold text-neutral-700">Typeface</label>
+                <label className="mb-1 block text-xs font-semibold text-neutral-700">Typeface / Font</label>
                 <select
                   value={selected.fontFamily}
                   onChange={(e) => updatePlacement(selected.id, { fontFamily: e.target.value })}
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-800 shadow-2xs focus:border-blue-500 focus:outline-hidden"
+                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-800 shadow-2xs focus:border-blue-500 focus:outline-hidden"
                 >
                   {allFonts.map((f) => (
                     <option key={f} value={f}>
@@ -285,11 +331,13 @@ export function FieldPlacer() {
                 </select>
               </div>
 
-              {/* Font Size Slider & Input */}
+              {/* Font Size Slider & Quick Step */}
               <div>
                 <div className="flex items-center justify-between mb-1 text-xs">
                   <label className="font-semibold text-neutral-700">Font Size</label>
-                  <span className="font-mono text-neutral-500">{selected.fontSize} px</span>
+                  <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    {selected.fontSize} px
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -297,8 +345,25 @@ export function FieldPlacer() {
                   max={96}
                   value={selected.fontSize}
                   onChange={(e) => updatePlacement(selected.id, { fontSize: Number(e.target.value) })}
-                  className="w-full accent-blue-600 cursor-pointer"
+                  className="w-full accent-blue-600 cursor-pointer h-2 bg-neutral-200 rounded-lg"
                 />
+                <div className="flex justify-between text-[10px] text-neutral-400 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => updatePlacement(selected.id, { fontSize: Math.max(8, selected.fontSize - 2) })}
+                    className="hover:text-neutral-700 font-mono"
+                  >
+                    -2px
+                  </button>
+                  <span>8px - 96px</span>
+                  <button
+                    type="button"
+                    onClick={() => updatePlacement(selected.id, { fontSize: Math.min(96, selected.fontSize + 2) })}
+                    className="hover:text-neutral-700 font-mono"
+                  >
+                    +2px
+                  </button>
+                </div>
               </div>
 
               {/* Text Alignment */}
@@ -312,7 +377,7 @@ export function FieldPlacer() {
                       onClick={() => updatePlacement(selected.id, { align: a })}
                       className={`rounded-md py-1.5 text-xs font-medium capitalize transition-all cursor-pointer ${
                         selected.align === a
-                          ? 'bg-white text-blue-700 shadow-2xs font-semibold'
+                          ? 'bg-white text-blue-700 shadow-2xs font-bold'
                           : 'text-neutral-600 hover:text-neutral-900'
                       }`}
                     >
@@ -330,13 +395,13 @@ export function FieldPlacer() {
                     type="color"
                     value={selected.color}
                     onChange={(e) => updatePlacement(selected.id, { color: e.target.value })}
-                    className="h-9 w-12 cursor-pointer rounded-lg border border-neutral-300 p-1"
+                    className="h-9 w-12 cursor-pointer rounded-lg border border-neutral-300 p-1 bg-white"
                   />
                   <input
                     type="text"
                     value={selected.color}
                     onChange={(e) => updatePlacement(selected.id, { color: e.target.value })}
-                    className="w-full rounded-lg border border-neutral-300 px-3 py-1.5 font-mono text-xs uppercase"
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-1.5 font-mono text-xs uppercase text-neutral-800"
                   />
                 </div>
               </div>
