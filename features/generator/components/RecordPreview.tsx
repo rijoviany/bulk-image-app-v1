@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTemplateStore } from '../hooks/useTemplateStore';
 import { renderSinglePdf } from '../lib/pdf-engine';
+import { CURATED_FONTS } from '../lib/fonts';
 import { saveAs } from 'file-saver';
 
 export function RecordPreview() {
@@ -33,6 +34,14 @@ export function RecordPreview() {
   const aspect = template.height / template.width;
   const w = Math.min(860, template.width);
   const h = Math.round(w * aspect);
+
+  const getCssFamily = useCallback((fontId: string) => {
+    const curated = CURATED_FONTS.find((f) => f.id === fontId);
+    if (curated) return curated.cssFamily;
+    if (fontId.startsWith('Times')) return "'Times New Roman', serif";
+    if (fontId.startsWith('Courier')) return 'Courier, monospace';
+    return fontId;
+  }, []);
 
   const handleDownloadSingle = async () => {
     setDownloadingSingle(true);
@@ -147,15 +156,12 @@ export function RecordPreview() {
                   transform,
                   fontSize: `${p.fontSize}px`,
                   color: p.color,
-                  fontFamily: p.fontFamily.startsWith('Times')
-                    ? 'serif'
-                    : p.fontFamily.startsWith('Courier')
-                      ? 'monospace'
-                      : p.fontFamily,
+                  fontFamily: getCssFamily(p.fontFamily),
                   fontWeight: p.fontFamily.includes('Bold') ? 'bold' : 'normal',
                   fontStyle: p.fontFamily.includes('Oblique') || p.fontFamily.includes('Italic') ? 'italic' : 'normal',
                   lineHeight: 1,
                   padding: '2px 4px',
+                  backgroundColor: 'transparent',
                 }}
               >
                 {text}

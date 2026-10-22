@@ -6,6 +6,45 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* Curated Built-in Fonts */
+@font-face {
+  font-family: 'Great Vibes';
+  src: url('/fonts/Great-Vibes.woff') format('woff');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Dancing Script';
+  src: url('/fonts/Dancing-Script.woff') format('woff');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cinzel';
+  src: url('/fonts/Cinzel-Regular.woff') format('woff');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cinzel-Bold';
+  font-weight: bold;
+  src: url('/fonts/Cinzel-Bold.woff') format('woff');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  src: url('/fonts/Montserrat-Regular.woff') format('woff');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Montserrat-Bold';
+  font-weight: bold;
+  src: url('/fonts/Montserrat-Bold.woff') format('woff');
+  font-display: swap;
+}
+
 body {
   background: var(--color-background);
   color: var(--color-foreground);

@@ -2,17 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useTemplateStore } from '../hooks/useTemplateStore';
-
-export const BUILT_IN_FONTS = [
-  'Helvetica',
-  'Helvetica-Bold',
-  'Helvetica-Oblique',
-  'Times-Roman',
-  'Times-Roman-Bold',
-  'Times-Roman-Italic',
-  'Courier',
-  'Courier-Bold',
-];
+import { CURATED_FONTS } from '../lib/fonts';
 
 export function FontManager() {
   const { customFonts, addCustomFont } = useTemplateStore();
@@ -50,13 +40,15 @@ export function FontManager() {
     [addCustomFont],
   );
 
+  const categories = ['Cursive', 'Minimalist', 'Professional', 'Standard'] as const;
+
   return (
     <div className="space-y-4 rounded-xl border border-neutral-200/80 bg-white p-6 shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold text-neutral-900">3. Fonts & Typography</h2>
+          <h2 className="text-base font-semibold text-neutral-900">3. Built-In Typography</h2>
           <p className="text-xs text-neutral-500">
-            Standard PDF fonts are ready. Upload any custom branding font (.ttf / .otf).
+            Curated cursive calligraphy, minimalist modern sans, and professional classical fonts are ready to use.
           </p>
         </div>
 
@@ -64,30 +56,45 @@ export function FontManager() {
           <svg className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Upload Custom Font (.ttf / .otf)
-          <input type="file" accept=".ttf,.otf" onChange={handleUpload} className="sr-only" />
+          Upload Custom (.ttf / .otf)
+          <input type="file" accept=".ttf,.otf,.woff" onChange={handleUpload} className="sr-only" />
         </label>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        {BUILT_IN_FONTS.map((f) => (
-          <span
-            key={f}
-            className="inline-flex items-center rounded-md bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700 font-mono"
-          >
-            {f}
-          </span>
-        ))}
-        {customFonts.map((f) => (
-          <span
-            key={f.name}
-            className="inline-flex items-center gap-1 rounded-md bg-purple-50 border border-purple-200 px-2.5 py-1 text-xs font-semibold text-purple-700"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-            {f.name} (Custom)
-          </span>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+        {categories.map((cat) => (
+          <div key={cat} className="rounded-lg bg-neutral-50/80 p-3 border border-neutral-200/60 space-y-2">
+            <span className="text-[11px] font-bold tracking-wider uppercase text-neutral-400">
+              {cat}
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {CURATED_FONTS.filter((f) => f.category === cat).map((f) => (
+                <span
+                  key={f.id}
+                  className="inline-block rounded-md bg-white px-2 py-1 text-xs font-medium text-neutral-800 border border-neutral-200/80 shadow-2xs"
+                  style={{ fontFamily: f.cssFamily }}
+                >
+                  {f.label.split(' (')[0]}
+                </span>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
+
+      {customFonts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {customFonts.map((f) => (
+            <span
+              key={f.name}
+              className="inline-flex items-center gap-1 rounded-md bg-purple-50 border border-purple-200 px-2.5 py-1 text-xs font-semibold text-purple-700"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+              {f.name} (Custom)
+            </span>
+          ))}
+        </div>
+      )}
 
       {fontStatus && (
         <div className="rounded-lg bg-blue-50 border border-blue-200 p-2 text-xs text-blue-700">

@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, PDFFont, PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import { getFontBuffer } from './fonts';
 import type { FieldPlacement, CsvRecord, CustomFont, TemplateData } from './types';
 
 /** Hex string (#RRGGBB) → pdf-lib rgb */
@@ -35,32 +36,43 @@ async function embedFonts(
   const cache: FontCache = {};
   const needed = new Set(placements.map((p) => p.fontFamily));
 
-  // If we have custom fonts, register fontkit
-  if (customFonts.length > 0) {
-    doc.registerFontkit(fontkit);
-  }
+  // Always register fontkit for custom & curated fonts
+  doc.registerFontkit(fontkit);
 
   for (const name of needed) {
     if (cache[name]) continue;
 
+    // 1. Check standard PDF 14 fonts
     const stdKey = STANDARD_FONT_MAP[name];
     if (stdKey) {
       cache[name] = await doc.embedFont(stdKey);
       continue;
     }
 
+    // 2. Check curated built-in fonts (Cursive, Minimalist, Professional)
+    const curatedBuffer = await getFontBuffer(name);
+    if (curatedBuffer) {
+      try {
+        cache[name] = await doc.embedFont(curatedBuffer);
+        continue;
+      } catch (err) {
+        console.warn(`Failed to embed curated font "${name}"`, err);
+      }
+    }
+
+    // 3. Check user-uploaded custom fonts
     const custom = customFonts.find((f) => f.name === name);
     if (custom) {
       try {
         cache[name] = await doc.embedFont(custom.data.slice(0));
+        continue;
       } catch (err) {
         console.warn(`Failed to embed custom font "${name}", falling back to Helvetica`, err);
-        cache[name] = await doc.embedFont(StandardFonts.Helvetica);
       }
-    } else {
-      // Fallback to Helvetica
-      cache[name] = await doc.embedFont(StandardFonts.Helvetica);
     }
+
+    // 4. Default fallback to Helvetica
+    cache[name] = await doc.embedFont(StandardFonts.Helvetica);
   }
   return cache;
 }

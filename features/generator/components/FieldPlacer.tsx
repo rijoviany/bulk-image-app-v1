@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTemplateStore } from '../hooks/useTemplateStore';
-import { BUILT_IN_FONTS } from './FontManager';
+import { CURATED_FONTS } from '../lib/fonts';
 import type { FieldPlacement } from '../lib/types';
 
 const CANVAS_MAX_W = 860;
@@ -38,9 +38,16 @@ export function FieldPlacer() {
     ? selectedId
     : (placements[0]?.id ?? null);
 
-  const allFonts = [...BUILT_IN_FONTS, ...customFonts.map((f) => f.name)];
   const currentRecord = records[previewIndex] ?? {};
   const selected = placements.find((p) => p.id === activeSelectedId) ?? null;
+
+  const getCssFamily = useCallback((fontId: string) => {
+    const curated = CURATED_FONTS.find((f) => f.id === fontId);
+    if (curated) return curated.cssFamily;
+    if (fontId.startsWith('Times')) return "'Times New Roman', serif";
+    if (fontId.startsWith('Courier')) return 'Courier, monospace';
+    return fontId;
+  }, []);
 
   const addField = useCallback(
     (field: string) => {
@@ -51,15 +58,15 @@ export function FieldPlacer() {
         field,
         x: Math.round(canvasSize.w / 2),
         y: Math.min(canvasSize.h - 50, 80 + placements.length * 45),
-        fontSize: 24,
-        fontFamily: allFonts[0] ?? 'Helvetica',
-        color: '#0f172a',
+        fontSize: 28,
+        fontFamily: 'Great-Vibes', // Default to cursive for names/certificates
+        color: '#ffffff', // Default to bright color visible on templates
         align: 'center',
       };
       addPlacement(placement);
       setSelectedId(newId);
     },
-    [addPlacement, allFonts, canvasSize, placements],
+    [addPlacement, canvasSize, placements],
   );
 
   const autoPlaceAll = useCallback(() => {
@@ -74,9 +81,9 @@ export function FieldPlacer() {
           field: h,
           x: Math.round(canvasSize.w / 2),
           y: Math.round((canvasSize.h / (headers.length + 1)) * (idx + 1)),
-          fontSize: idx === 0 ? 32 : 20,
-          fontFamily: idx === 0 ? 'Times-Roman-Bold' : 'Helvetica',
-          color: idx === 0 ? '#1e3a8a' : '#334155',
+          fontSize: idx === 0 ? 36 : 22,
+          fontFamily: idx === 0 ? 'Great-Vibes' : idx === 1 ? 'Cinzel-Bold' : 'Montserrat',
+          color: idx === 0 ? '#fbbf24' : '#ffffff',
           align: 'center',
         });
       }
@@ -142,7 +149,7 @@ export function FieldPlacer() {
           <div>
             <h3 className="text-sm font-semibold text-neutral-900">Add Available CSV Fields</h3>
             <p className="text-xs text-neutral-500">
-              Click any column below to add its placeholder to the template canvas. Click a placeholder to edit its font, size & color.
+              Click any column below to add its placeholder to the template canvas. Drag to position.
             </p>
           </div>
           {headers.length > 0 && (
@@ -184,7 +191,7 @@ export function FieldPlacer() {
         <div className="flex-1 w-full flex flex-col items-center">
           <div
             ref={containerRef}
-            className="relative overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-md select-none touch-none"
+            className="relative overflow-hidden rounded-xl border border-neutral-300 bg-neutral-950 shadow-md select-none touch-none"
             style={{
               width: canvasSize.w,
               height: canvasSize.h,
@@ -202,7 +209,7 @@ export function FieldPlacer() {
               draggable={false}
             />
 
-            {/* Placed Dynamic Fields */}
+            {/* Placed Dynamic Fields - Clean Text Without Background */}
             {placements.map((p) => {
               const displayText = currentRecord[p.field] || `{${p.field}}`;
               const isSelected = activeSelectedId === p.id;
@@ -220,10 +227,10 @@ export function FieldPlacer() {
                     setSelectedId(p.id);
                   }}
                   onPointerDown={(e) => onPointerDown(e, p.id)}
-                  className={`absolute cursor-grab active:cursor-grabbing whitespace-nowrap transition-all rounded-sm ${
+                  className={`absolute cursor-grab active:cursor-grabbing whitespace-nowrap transition-all select-none ${
                     isSelected
-                      ? 'ring-3 ring-blue-600 ring-offset-2 z-30 shadow-xl'
-                      : 'hover:ring-2 hover:ring-blue-400 z-20 cursor-pointer'
+                      ? 'z-30'
+                      : 'hover:outline-1 hover:outline-dashed hover:outline-blue-400/60 z-20 cursor-pointer'
                   }`}
                   style={{
                     left: `${p.x}px`,
@@ -231,33 +238,31 @@ export function FieldPlacer() {
                     transform,
                     fontSize: `${p.fontSize}px`,
                     color: p.color,
-                    fontFamily: p.fontFamily.startsWith('Times')
-                      ? 'serif'
-                      : p.fontFamily.startsWith('Courier')
-                        ? 'monospace'
-                        : p.fontFamily,
+                    fontFamily: getCssFamily(p.fontFamily),
                     fontWeight: p.fontFamily.includes('Bold') ? 'bold' : 'normal',
                     fontStyle: p.fontFamily.includes('Oblique') || p.fontFamily.includes('Italic') ? 'italic' : 'normal',
                     lineHeight: 1,
-                    padding: '4px 10px',
-                    backgroundColor: isSelected ? 'rgba(239, 246, 255, 0.92)' : 'rgba(255, 255, 255, 0.75)',
-                    backdropFilter: 'blur(3px)',
-                    border: isSelected ? '2px solid #2563eb' : '1px dashed rgba(71, 85, 105, 0.5)',
+                    padding: '2px 6px',
+                    // Pure transparent background for clear view of artwork
+                    backgroundColor: 'transparent',
+                    border: isSelected ? '1.5px dashed #3b82f6' : '1.5px dashed transparent',
+                    borderRadius: 2,
+                    textShadow: p.color === '#ffffff' ? '0 1px 3px rgba(0,0,0,0.7)' : 'none',
                   }}
                 >
-                  <span className="flex items-center gap-1.5">
-                    {isSelected && (
-                      <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
-                    )}
-                    {displayText}
-                  </span>
+                  {isSelected && (
+                    <span className="absolute -top-4 left-0 text-[10px] bg-blue-600 text-white font-mono px-1 rounded-t leading-tight pointer-events-none shadow-xs">
+                      {`{${p.field}}`}
+                    </span>
+                  )}
+                  {displayText}
                 </div>
               );
             })}
           </div>
 
           <div className="flex items-center justify-between w-full max-w-[860px] text-xs text-neutral-400 mt-2 px-1">
-            <span>Click any placeholder to inspect & edit font, size and color. Drag to position.</span>
+            <span>Clear view enabled (no background). Click any text to edit or drag to reposition.</span>
             <span>Canvas size: {canvasSize.w} × {canvasSize.h}px</span>
           </div>
         </div>
@@ -311,23 +316,55 @@ export function FieldPlacer() {
 
           {!selected ? (
             <div className="py-8 text-center text-xs text-neutral-400">
-              No fields placed on the canvas yet. Click any field button above or &quot;Auto-Place All Fields&quot; to begin.
+              No fields placed on the canvas yet. Click any field button above to add one.
             </div>
           ) : (
             <div className="space-y-4 pt-1">
-              {/* Typeface Selection */}
+              {/* Typeface Selection with Categories */}
               <div>
-                <label className="mb-1 block text-xs font-semibold text-neutral-700">Typeface / Font</label>
+                <label className="mb-1 block text-xs font-semibold text-neutral-700">Typeface / Font Style</label>
                 <select
                   value={selected.fontFamily}
                   onChange={(e) => updatePlacement(selected.id, { fontFamily: e.target.value })}
                   className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-800 shadow-2xs focus:border-blue-500 focus:outline-hidden"
                 >
-                  {allFonts.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
+                  <optgroup label="✨ Cursive & Calligraphy">
+                    {CURATED_FONTS.filter((f) => f.category === 'Cursive').map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="⚡ Minimalist & Modern">
+                    {CURATED_FONTS.filter((f) => f.category === 'Minimalist').map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🎓 Professional Classical">
+                    {CURATED_FONTS.filter((f) => f.category === 'Professional').map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="📄 Simple Universal PDF Fonts">
+                    {CURATED_FONTS.filter((f) => f.category === 'Standard').map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {customFonts.length > 0 && (
+                    <optgroup label="📁 Uploaded Custom Fonts">
+                      {customFonts.map((f) => (
+                        <option key={f.name} value={f.name}>
+                          {f.name} (Custom)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
@@ -387,7 +424,7 @@ export function FieldPlacer() {
                 </div>
               </div>
 
-              {/* Color Picker */}
+              {/* Color Picker & Presets */}
               <div>
                 <label className="mb-1 block text-xs font-semibold text-neutral-700">Text Color</label>
                 <div className="flex items-center gap-2">
@@ -403,6 +440,26 @@ export function FieldPlacer() {
                     onChange={(e) => updatePlacement(selected.id, { color: e.target.value })}
                     className="w-full rounded-lg border border-neutral-300 px-3 py-1.5 font-mono text-xs uppercase text-neutral-800"
                   />
+                </div>
+                {/* Quick Color Swatches */}
+                <div className="flex items-center gap-1.5 mt-2">
+                  {[
+                    { label: 'White', hex: '#ffffff' },
+                    { label: 'Gold', hex: '#fbbf24' },
+                    { label: 'Navy', hex: '#1e3a8a' },
+                    { label: 'Black', hex: '#0f172a' },
+                    { label: 'Red', hex: '#dc2626' },
+                    { label: 'Silver', hex: '#94a3b8' },
+                  ].map((c) => (
+                    <button
+                      key={c.hex}
+                      type="button"
+                      title={c.label}
+                      onClick={() => updatePlacement(selected.id, { color: c.hex })}
+                      className="h-5 w-5 rounded-full border border-neutral-300 shadow-2xs cursor-pointer transition-transform hover:scale-110"
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ))}
                 </div>
               </div>
 
