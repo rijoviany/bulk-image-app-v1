@@ -32,8 +32,9 @@ export async function renderPdfPageToDataUrl(
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-  // Load document from Uint8Array
-  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes) });
+  // CRITICAL: Always slice(0) so the PDF.js web worker cannot detach the caller's ArrayBuffer!
+  const bufferCopy = pdfBytes.slice(0);
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(bufferCopy) });
   const pdfDoc = await loadingTask.promise;
   const page = await pdfDoc.getPage(1);
 

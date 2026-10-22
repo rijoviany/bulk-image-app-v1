@@ -29,16 +29,16 @@ export function FontManager() {
         // Clean font family name for CSS
         const cleanName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        // Dynamically register with browser document fonts
+        // Dynamically register with browser document fonts using a clone
         try {
-          const fontFace = new FontFace(cleanName, data);
+          const fontFace = new FontFace(cleanName, data.slice(0));
           await fontFace.load();
           document.fonts.add(fontFace);
         } catch (cssErr) {
           console.warn('Could not register font with CSS FontFace API', cssErr);
         }
 
-        addCustomFont({ name: cleanName, data });
+        addCustomFont({ name: cleanName, data: data.slice(0) });
         setFontStatus(`Font "${cleanName}" loaded successfully.`);
         setTimeout(() => setFontStatus(null), 3500);
       } catch (err) {

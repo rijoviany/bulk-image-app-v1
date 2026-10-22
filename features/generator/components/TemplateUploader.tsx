@@ -20,23 +20,23 @@ export function TemplateUploader() {
 
         if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
           try {
-            // First try rendering via pdfjs-dist for crisp canvas rendering
-            const { dataUrl, width, height } = await renderPdfPageToDataUrl(bytes);
-            setTemplate({ type: 'pdf', bytes, dataUrl, width, height });
+            // Pass a clone so pdfjs-dist / worker can never detach our template bytes
+            const { dataUrl, width, height } = await renderPdfPageToDataUrl(bytes.slice(0));
+            setTemplate({ type: 'pdf', bytes: bytes.slice(0), dataUrl, width, height });
           } catch (pdfErr) {
-            console.warn('pdfjs-dist preview failed, falling back to pdf-lib metadata', pdfErr);
-            const doc = await PDFDocument.load(bytes);
+            console.warn('pdfjs preview failed, falling back to pdf-lib metadata', pdfErr);
+            const doc = await PDFDocument.load(bytes.slice(0));
             const page = doc.getPages()[0];
             const { width, height } = page.getSize();
-            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const blob = new Blob([bytes.slice(0)], { type: 'application/pdf' });
             const dataUrl = URL.createObjectURL(blob);
-            setTemplate({ type: 'pdf', bytes, dataUrl, width, height });
+            setTemplate({ type: 'pdf', bytes: bytes.slice(0), dataUrl, width, height });
           }
         } else {
           // Image file (PNG, JPG, WebP)
           const dataUrl = await fileToDataUrl(file);
           const { width, height } = await getImageDimensions(dataUrl);
-          setTemplate({ type: 'image', bytes, dataUrl, width, height });
+          setTemplate({ type: 'image', bytes: bytes.slice(0), dataUrl, width, height });
         }
       } catch (err) {
         console.error('File load error:', err);

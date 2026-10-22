@@ -52,7 +52,7 @@ async function embedFonts(
     const custom = customFonts.find((f) => f.name === name);
     if (custom) {
       try {
-        cache[name] = await doc.embedFont(custom.data);
+        cache[name] = await doc.embedFont(custom.data.slice(0));
       } catch (err) {
         console.warn(`Failed to embed custom font "${name}", falling back to Helvetica`, err);
         cache[name] = await doc.embedFont(StandardFonts.Helvetica);
@@ -79,9 +79,12 @@ export async function renderSinglePdf(
   let pdfWidth: number;
   let pdfHeight: number;
 
+  // Clone bytes so each generation has a pristine, non-detached ArrayBuffer
+  const bytesClone = template.bytes.slice(0);
+
   if (template.type === 'pdf') {
     // Load original PDF, use first page
-    doc = await PDFDocument.load(template.bytes);
+    doc = await PDFDocument.load(bytesClone);
     page = doc.getPages()[0];
     pdfWidth = page.getWidth();
     pdfHeight = page.getHeight();
@@ -91,13 +94,13 @@ export async function renderSinglePdf(
 
     // Embed the image
     let img;
-    const header = new Uint8Array(template.bytes.slice(0, 4));
+    const header = new Uint8Array(bytesClone.slice(0, 4));
     const isPng =
       header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47;
     if (isPng) {
-      img = await doc.embedPng(template.bytes);
+      img = await doc.embedPng(bytesClone);
     } else {
-      img = await doc.embedJpg(template.bytes);
+      img = await doc.embedJpg(bytesClone);
     }
 
     pdfWidth = img.width;
