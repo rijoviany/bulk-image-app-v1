@@ -46,7 +46,10 @@ interface TemplateStore {
   downloadSize: string | null;
   setDownloadResult: (url: string | null, filename: string | null, size: string | null) => void;
 
-  // Purge / Reset
+  // Purge only generated ZIP & free memory (keeps template & CSV)
+  purgeGenerationOnly: () => void;
+
+  // Purge / Reset Everything
   purgeAllData: () => void;
 }
 
@@ -88,8 +91,35 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
   downloadUrl: null,
   downloadFilename: null,
   downloadSize: null,
-  setDownloadResult: (downloadUrl, downloadFilename, downloadSize) =>
-    set({ downloadUrl, downloadFilename, downloadSize }),
+  setDownloadResult: (downloadUrl, downloadFilename, downloadSize) => {
+    // Revoke previous URL if replacing to prevent memory accumulation
+    const prevUrl = get().downloadUrl;
+    if (prevUrl && prevUrl !== downloadUrl) {
+      try {
+        URL.revokeObjectURL(prevUrl);
+      } catch (e) {
+        // Ignore
+      }
+    }
+    set({ downloadUrl, downloadFilename, downloadSize });
+  },
+
+  purgeGenerationOnly: () => {
+    const currentUrl = get().downloadUrl;
+    if (currentUrl) {
+      try {
+        URL.revokeObjectURL(currentUrl);
+      } catch (e) {
+        // Ignore
+      }
+    }
+    set({
+      downloadUrl: null,
+      downloadFilename: null,
+      downloadSize: null,
+      progress: initialProgress,
+    });
+  },
 
   purgeAllData: () => {
     const currentUrl = get().downloadUrl;

@@ -21,11 +21,15 @@ export function usePdfGenerator() {
     customFonts,
     setProgress,
     setDownloadResult,
+    purgeGenerationOnly,
   } = useTemplateStore();
 
   const generate = useCallback(
     async (canvasWidth: number, canvasHeight: number) => {
       if (!template || records.length === 0 || placements.length === 0) return;
+
+      // Automatically purge previous generation blob before creating a new one
+      purgeGenerationOnly();
 
       const total = records.length;
       setProgress({ current: 0, total, status: 'generating' });
@@ -83,7 +87,7 @@ export function usePdfGenerator() {
         });
       }
     },
-    [template, records, placements, customFonts, setProgress, setDownloadResult],
+    [template, records, placements, customFonts, setProgress, setDownloadResult, purgeGenerationOnly],
   );
 
   return { generate };

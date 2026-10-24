@@ -9,16 +9,16 @@ export function BulkGenerator() {
     records,
     placements,
     progress,
-    setProgress,
     template,
     downloadUrl,
     downloadFilename,
     downloadSize,
+    purgeGenerationOnly,
     purgeAllData,
   } = useTemplateStore();
 
   const { generate } = usePdfGenerator();
-  const [purgedNotification, setPurgedNotification] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
 
   const canGenerate = Boolean(template && records.length > 0 && placements.length > 0);
 
@@ -34,10 +34,16 @@ export function BulkGenerator() {
     generate(w, h);
   };
 
-  const handlePurge = () => {
+  const handlePurgeGeneration = () => {
+    purgeGenerationOnly();
+    setNotification('✓ Generated ZIP purged from browser memory. Your template and placements are preserved.');
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  const handlePurgeAll = () => {
     purgeAllData();
-    setPurgedNotification(true);
-    setTimeout(() => setPurgedNotification(false), 5000);
+    setNotification('✓ All session data, templates, CSVs, and generated files have been purged.');
+    setTimeout(() => setNotification(null), 5000);
   };
 
   const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
@@ -53,12 +59,21 @@ export function BulkGenerator() {
         </p>
       </div>
 
-      {purgedNotification && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-xs font-semibold text-emerald-800 flex items-center gap-2">
-          <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          All session data, generated PDFs, and recipient records have been completely purged from browser memory.
+      {notification && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-xs font-semibold text-emerald-800 flex items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{notification}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold px-1"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -114,7 +129,7 @@ export function BulkGenerator() {
         {/* Downloadable link card when done */}
         {progress.status === 'done' && downloadUrl && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 space-y-4">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div className="space-y-1">
                 <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
                   READY FOR DOWNLOAD
@@ -127,32 +142,50 @@ export function BulkGenerator() {
                 </p>
               </div>
 
-              <a
-                href={downloadUrl}
-                download={downloadFilename || 'certificates.zip'}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download ZIP Again
-              </a>
+              <div className="flex items-center gap-2">
+                <a
+                  href={downloadUrl}
+                  download={downloadFilename || 'certificates.zip'}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download ZIP Again
+                </a>
+              </div>
             </div>
 
+            {/* Granular Purge Actions */}
             <div className="pt-3 border-t border-emerald-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-neutral-600">
               <p>
-                Downloaded your file? You can now remove all data from this Vercel application.
+                Finished with this batch? Purge it from memory or start completely fresh:
               </p>
-              <button
-                type="button"
-                onClick={handlePurge}
-                className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100/80 border border-red-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Remove from Vercel App & Purge Memory
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handlePurgeGeneration}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900 bg-white hover:bg-neutral-100 border border-neutral-300 px-3 py-1.5 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                  title="Purge only the generated ZIP from memory while preserving your template & CSV"
+                >
+                  <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Purge Generation (Keep Template)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePurgeAll}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100/80 border border-red-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                  title="Wipe everything including template, CSV, and generated files"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Purge Everything
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -190,7 +223,7 @@ export function BulkGenerator() {
         <div className="rounded-xl border border-neutral-100 bg-neutral-50/60 p-4 text-xs text-neutral-500 space-y-1">
           <p className="font-semibold text-neutral-700">🔒 Zero-Server Privacy & Stateless Deployment</p>
           <p>
-            All PDF rendering and zip compression happens entirely inside your web browser via WebAssembly and PDF-Lib. Zero recipient data or generated documents are ever uploaded, retained, or processed on Vercel servers.
+            All PDF rendering and zip compression happens entirely inside your web browser via WebAssembly and PDF-Lib. Zero recipient data or generated documents are ever uploaded, retained, or processed on Vercel servers. Old generations are automatically purged from memory whenever a new generation starts or when you click Purge.
           </p>
         </div>
       </div>
