@@ -1,6 +1,7 @@
 import { PDFDocument, rgb, StandardFonts, PDFFont, PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { getFontBuffer } from './fonts';
+import { sanitizeForFont } from './text-sanitizer';
 import type { FieldPlacement, CsvRecord, CustomFont, TemplateData } from './types';
 
 /** Hex string (#RRGGBB) → pdf-lib rgb */
@@ -128,8 +129,9 @@ export async function renderSinglePdf(
   const fontCache = await embedFonts(doc, placements, customFonts);
 
   for (const pl of placements) {
-    const text = String(record[pl.field] ?? '');
+    const rawText = String(record[pl.field] ?? '');
     const font = fontCache[pl.fontFamily] ?? fontCache['Helvetica'];
+    const text = sanitizeForFont(rawText, font);
     const size = pl.fontSize * scaleY;
 
     // Convert canvas coords (origin top-left) to PDF coords (origin bottom-left)

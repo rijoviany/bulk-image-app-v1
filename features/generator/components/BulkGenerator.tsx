@@ -10,9 +10,9 @@ export function BulkGenerator() {
     placements,
     progress,
     template,
-    downloadUrl,
-    downloadFilename,
-    downloadSize,
+    splitBatchSize,
+    setSplitBatchSize,
+    downloadBatches,
     purgeGenerationOnly,
     purgeAllData,
   } = useTemplateStore();
@@ -36,7 +36,7 @@ export function BulkGenerator() {
 
   const handlePurgeGeneration = () => {
     purgeGenerationOnly();
-    setNotification('✓ Generated ZIP purged from browser memory. Your template and placements are preserved.');
+    setNotification('✓ Generated ZIP batches purged from memory. Your template and placements are preserved.');
     setTimeout(() => setNotification(null), 5000);
   };
 
@@ -49,13 +49,15 @@ export function BulkGenerator() {
   const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const isGenerating = progress.status === 'generating' || progress.status === 'zipping';
 
+  const totalBatchesExpected = Math.ceil(records.length / (splitBatchSize || 250));
+
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="text-center space-y-1">
         <h2 className="text-xl font-bold tracking-tight text-neutral-900">Generate Bulk PDFs</h2>
         <p className="text-xs text-neutral-500">
-          Everything processes in your browser. No files are uploaded to any server.
+          Everything processes in your browser. Automatic ZIP splitting & Unicode sanitization enabled.
         </p>
       </div>
 
@@ -88,8 +90,36 @@ export function BulkGenerator() {
           <p className="text-xs font-medium text-neutral-500 mt-0.5">Placeholders Placed</p>
         </div>
         <div className="rounded-xl border border-neutral-200/80 bg-white p-4 shadow-xs text-center">
-          <p className="text-2xl font-bold tabular-nums text-blue-600">{records.length}</p>
-          <p className="text-xs font-medium text-neutral-500 mt-0.5">Total PDFs to Build</p>
+          <p className="text-2xl font-bold tabular-nums text-blue-600">
+            {records.length > 0 ? `${totalBatchesExpected} ZIP ${totalBatchesExpected === 1 ? 'file' : 'parts'}` : '0'}
+          </p>
+          <p className="text-xs font-medium text-neutral-500 mt-0.5">
+            {splitBatchSize} per ZIP
+          </p>
+        </div>
+      </div>
+
+      {/* ZIP Batch Split Setting */}
+      <div className="rounded-xl border border-neutral-200/80 bg-white p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div>
+          <span className="font-semibold text-neutral-800">Split ZIP Archive Batches</span>
+          <p className="text-neutral-500 text-[11px]">
+            Splits large certificate sets into lightweight ZIP files for faster download and zero memory crashes.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <label className="text-neutral-600 font-medium">Batch Size:</label>
+          <select
+            value={splitBatchSize}
+            onChange={(e) => setSplitBatchSize(Number(e.target.value))}
+            disabled={isGenerating}
+            className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-2xs focus:border-blue-500 focus:outline-hidden"
+          >
+            <option value={100}>100 names per ZIP</option>
+            <option value={250}>250 names per ZIP (Recommended)</option>
+            <option value={500}>500 names per ZIP</option>
+            <option value={10000}>All in 1 ZIP (No split)</option>
+          </select>
         </div>
       </div>
 
@@ -103,9 +133,17 @@ export function BulkGenerator() {
                 {isGenerating && (
                   <span className="h-2 w-2 rounded-full bg-blue-600 animate-ping" />
                 )}
-                {progress.status === 'generating' && `Rendering PDF ${progress.current} of ${progress.total}...`}
-                {progress.status === 'zipping' && 'Compressing into high-speed ZIP archive...'}
-                {progress.status === 'done' && '✓ All PDFs generated and packaged successfully!'}
+                {progress.status === 'generating' && (
+                  <span>
+                    Rendering {progress.totalBatches > 1 ? `Part ${progress.currentBatch} of ${progress.totalBatches}` : 'PDFs'}: {progress.current} of {progress.total}...
+                  </span>
+                )}
+                {progress.status === 'zipping' && (
+                  <span>
+                    Compressing {progress.totalBatches > 1 ? `Part ${progress.currentBatch} of ${progress.totalBatches}` : 'ZIP archive'}...
+                  </span>
+                )}
+                {progress.status === 'done' && '✓ All certificates generated and packaged successfully!'}
                 {progress.status === 'error' && `Error: ${progress.error}`}
               </span>
               <span className="font-mono font-bold text-neutral-600 tabular-nums">{pct}%</span>
@@ -126,40 +164,56 @@ export function BulkGenerator() {
           </div>
         )}
 
-        {/* Downloadable link card when done */}
-        {progress.status === 'done' && downloadUrl && (
+        {/* Download Batches Card */}
+        {progress.status === 'done' && downloadBatches.length > 0 && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-              <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <div>
                 <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
                   READY FOR DOWNLOAD
                 </span>
                 <p className="text-sm font-bold text-neutral-900 mt-1">
-                  {downloadFilename}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Archive Size: <strong>{downloadSize}</strong> · Contains {records.length} personalized individual PDFs
+                  {downloadBatches.length === 1
+                    ? '1 ZIP Archive Ready'
+                    : `${downloadBatches.length} Split ZIP Archives Ready (${records.length} Total PDFs)`}
                 </p>
               </div>
+            </div>
 
-              <div className="flex items-center gap-2">
-                <a
-                  href={downloadUrl}
-                  download={downloadFilename || 'certificates.zip'}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors"
+            {/* List of Batches */}
+            <div className="space-y-2 pt-1">
+              {downloadBatches.map((batch) => (
+                <div
+                  key={batch.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-emerald-200/80 bg-white p-3 shadow-2xs"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Download ZIP Again
-                </a>
-              </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-neutral-800">
+                      📦 Part {batch.partNumber} of {batch.totalParts}: Records #{batch.startRecord} – #{batch.endRecord}
+                    </p>
+                    <p className="text-[11px] text-neutral-500">
+                      {batch.count} PDFs · Size: <strong>{batch.size}</strong> · {batch.filename}
+                    </p>
+                  </div>
+
+                  <a
+                    href={batch.url}
+                    download={batch.filename}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors shrink-0"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Part {batch.partNumber}
+                  </a>
+                </div>
+              ))}
             </div>
 
             {/* Granular Purge Actions */}
             <div className="pt-3 border-t border-emerald-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-neutral-600">
               <p>
-                Finished with this batch? Purge it from memory or start completely fresh:
+                Downloaded your files? Purge memory or reset:
               </p>
               <div className="flex items-center gap-2 flex-wrap">
                 <button
@@ -171,7 +225,7 @@ export function BulkGenerator() {
                   <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Purge Generation (Keep Template)
+                  Purge Generations (Keep Template)
                 </button>
 
                 <button
@@ -202,10 +256,10 @@ export function BulkGenerator() {
               {isGenerating ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  Generating {records.length} Bulk PDFs...
+                  Generating {records.length} Bulk PDFs ({totalBatchesExpected} {totalBatchesExpected === 1 ? 'part' : 'split parts'})...
                 </span>
               ) : (
-                `Generate ${records.length} Personalized PDFs`
+                `Generate ${records.length} Personalized PDFs (${totalBatchesExpected} ${totalBatchesExpected === 1 ? 'ZIP' : 'Split ZIPs of 250'})`
               )}
             </button>
 
@@ -219,11 +273,11 @@ export function BulkGenerator() {
           </div>
         )}
 
-        {/* Client-Side Free-Tier Architecture Note */}
+        {/* Architecture Note */}
         <div className="rounded-xl border border-neutral-100 bg-neutral-50/60 p-4 text-xs text-neutral-500 space-y-1">
-          <p className="font-semibold text-neutral-700">🔒 Zero-Server Privacy & Stateless Deployment</p>
+          <p className="font-semibold text-neutral-700">🔒 Smart Batching & Zero-Server Deployment</p>
           <p>
-            All PDF rendering and zip compression happens entirely inside your web browser via WebAssembly and PDF-Lib. Zero recipient data or generated documents are ever uploaded, retained, or processed on Vercel servers. Old generations are automatically purged from memory whenever a new generation starts or when you click Purge.
+            Large recipient lists are split into clean batches of 250 to ensure maximum speed and stability across phones, tablets, and laptops. All special Unicode characters and invisible spreadsheet markers are sanitized automatically.
           </p>
         </div>
       </div>

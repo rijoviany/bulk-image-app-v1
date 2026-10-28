@@ -5,6 +5,7 @@ import type {
   FieldPlacement,
   CustomFont,
   GenerationProgress,
+  DownloadBatch,
   Step,
 } from '../lib/types';
 
@@ -36,15 +37,18 @@ interface TemplateStore {
   previewIndex: number;
   setPreviewIndex: (i: number) => void;
 
+  // Split ZIP Batch Configuration (Default: 250)
+  splitBatchSize: number;
+  setSplitBatchSize: (size: number) => void;
+
   // Generation
   progress: GenerationProgress;
   setProgress: (p: GenerationProgress) => void;
 
-  // Downloadable Asset Result
-  downloadUrl: string | null;
-  downloadFilename: string | null;
-  downloadSize: string | null;
-  setDownloadResult: (url: string | null, filename: string | null, size: string | null) => void;
+  // Downloadable Asset Batches
+  downloadBatches: DownloadBatch[];
+  addDownloadBatch: (batch: DownloadBatch) => void;
+  clearDownloadBatches: () => void;
 
   // Purge only generated ZIP & free memory (keeps template & CSV)
   purgeGenerationOnly: () => void;
@@ -56,6 +60,8 @@ interface TemplateStore {
 const initialProgress: GenerationProgress = {
   current: 0,
   total: 0,
+  currentBatch: 0,
+  totalBatches: 0,
   status: 'idle',
 };
 
@@ -85,51 +91,53 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
   previewIndex: 0,
   setPreviewIndex: (previewIndex) => set({ previewIndex }),
 
+  // Default to 250 records per ZIP
+  splitBatchSize: 250,
+  setSplitBatchSize: (splitBatchSize) => set({ splitBatchSize }),
+
   progress: initialProgress,
   setProgress: (progress) => set({ progress }),
 
-  downloadUrl: null,
-  downloadFilename: null,
-  downloadSize: null,
-  setDownloadResult: (downloadUrl, downloadFilename, downloadSize) => {
-    // Revoke previous URL if replacing to prevent memory accumulation
-    const prevUrl = get().downloadUrl;
-    if (prevUrl && prevUrl !== downloadUrl) {
+  downloadBatches: [],
+  addDownloadBatch: (batch) =>
+    set((s) => ({ downloadBatches: [...s.downloadBatches, batch] })),
+  clearDownloadBatches: () => {
+    const batches = get().downloadBatches;
+    batches.forEach((b) => {
       try {
-        URL.revokeObjectURL(prevUrl);
+        URL.revokeObjectURL(b.url);
       } catch (e) {
         // Ignore
       }
-    }
-    set({ downloadUrl, downloadFilename, downloadSize });
+    });
+    set({ downloadBatches: [] });
   },
 
   purgeGenerationOnly: () => {
-    const currentUrl = get().downloadUrl;
-    if (currentUrl) {
+    const batches = get().downloadBatches;
+    batches.forEach((b) => {
       try {
-        URL.revokeObjectURL(currentUrl);
+        URL.revokeObjectURL(b.url);
       } catch (e) {
         // Ignore
       }
-    }
+    });
     set({
-      downloadUrl: null,
-      downloadFilename: null,
-      downloadSize: null,
+      downloadBatches: [],
       progress: initialProgress,
     });
   },
 
   purgeAllData: () => {
-    const currentUrl = get().downloadUrl;
-    if (currentUrl) {
+    const batches = get().downloadBatches;
+    batches.forEach((b) => {
       try {
-        URL.revokeObjectURL(currentUrl);
+        URL.revokeObjectURL(b.url);
       } catch (e) {
         // Ignore
       }
-    }
+    });
+
     const currentTemplateUrl = get().template?.dataUrl;
     if (currentTemplateUrl && currentTemplateUrl.startsWith('blob:')) {
       try {
@@ -148,9 +156,7 @@ export const useTemplateStore = create<TemplateStore>((set, get) => ({
       customFonts: [],
       previewIndex: 0,
       progress: initialProgress,
-      downloadUrl: null,
-      downloadFilename: null,
-      downloadSize: null,
+      downloadBatches: [],
     });
   },
 }));

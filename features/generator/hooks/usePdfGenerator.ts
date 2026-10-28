@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { renderSinglePdf } from '../lib/pdf-engine';
+import { cleanText } from '../lib/text-sanitizer';
 import { useTemplateStore } from './useTemplateStore';
 
 function formatBytes(bytes: number, decimals = 1) {
@@ -19,8 +20,9 @@ export function usePdfGenerator() {
     records,
     placements,
     customFonts,
+    splitBatchSize,
     setProgress,
-    setDownloadResult,
+    addDownloadBatch,
     purgeGenerationOnly,
   } = useTemplateStore();
 
@@ -28,66 +30,138 @@ export function usePdfGenerator() {
     async (canvasWidth: number, canvasHeight: number) => {
       if (!template || records.length === 0 || placements.length === 0) return;
 
-      // Automatically purge previous generation blob before creating a new one
+      // Automatically purge previous generation blobs before creating new ones
       purgeGenerationOnly();
 
       const total = records.length;
-      setProgress({ current: 0, total, status: 'generating' });
+      // Default to 250 records per ZIP
+      const batchSize = Math.max(1, splitBatchSize || 250);
+      const totalBatches = Math.ceil(total / batchSize);
 
-      const zip = new JSZip();
-      const CHUNK = 4; // Chunk size to keep browser UI frame rate 60fps
+      setProgress({
+        current: 0,
+        total,
+        currentBatch: 1,
+        totalBatches,
+        status: 'generating',
+      });
+
+      const CHUNK = 4; // sub-chunks to keep browser UI frame rate at 60fps
 
       try {
-        for (let i = 0; i < total; i += CHUNK) {
-          const batch = records.slice(i, i + CHUNK);
-          const pdfs = await Promise.all(
-            batch.map((record) =>
-              renderSinglePdf(template, record, placements, customFonts, canvasWidth, canvasHeight),
-            ),
-          );
+        let overallProcessed = 0;
 
-          pdfs.forEach((bytes, j) => {
-            const idx = i + j;
-            // Use first non-empty CSV column value as filename
-            const firstKey = Object.keys(records[idx])[0];
-            const rawVal = records[idx][firstKey] || `record_${idx + 1}`;
-            const label = String(rawVal).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 32);
-            zip.file(`${label}_${idx + 1}.pdf`, bytes);
+        for (let b = 0; b < totalBatches; b++) {
+          const batchStart = b * batchSize;
+          const batchEnd = Math.min(batchStart + batchSize, total);
+          const batchRecords = records.slice(batchStart, batchEnd);
+          const batchCount = batchRecords.length;
+          const partNumber = b + 1;
+
+          const zip = new JSZip();
+
+          for (let i = 0; i < batchCount; i += CHUNK) {
+            const subChunk = batchRecords.slice(i, i + CHUNK);
+            const pdfs = await Promise.all(
+              subChunk.map((record) =>
+                renderSinglePdf(template, record, placements, customFonts, canvasWidth, canvasHeight),
+              ),
+            );
+
+            pdfs.forEach((bytes, j) => {
+              const globalIdx = batchStart + i + j;
+              const record = records[globalIdx];
+              // Use first non-empty CSV column value as filename, sanitized
+              const firstKey = Object.keys(record)[0];
+              const rawVal = cleanText(record[firstKey]) || `record_${globalIdx + 1}`;
+              const label = String(rawVal).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 32);
+              zip.file(`${label}_${globalIdx + 1}.pdf`, bytes);
+            });
+
+            overallProcessed = Math.min(overallProcessed + subChunk.length, total);
+            setProgress({
+              current: overallProcessed,
+              total,
+              currentBatch: partNumber,
+              totalBatches,
+              status: 'generating',
+            });
+
+            // Yield to browser main thread
+            await new Promise((r) => setTimeout(r, 10));
+          }
+
+          // Compressing this batch into ZIP
+          setProgress({
+            current: overallProcessed,
+            total,
+            currentBatch: partNumber,
+            totalBatches,
+            status: 'zipping',
           });
 
-          setProgress({ current: Math.min(i + CHUNK, total), total, status: 'generating' });
+          const blob = await zip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 },
+          });
 
-          // Yield to browser main thread
-          await new Promise((r) => setTimeout(r, 10));
+          const filename =
+            totalBatches > 1
+              ? `certificates_part_${partNumber}_of_${totalBatches}_(${batchStart + 1}-${batchEnd}).zip`
+              : `bulk_certificates_(${total}_records).zip`;
+
+          const url = URL.createObjectURL(blob);
+          const size = formatBytes(blob.size);
+
+          addDownloadBatch({
+            id: `batch-${partNumber}-${Date.now()}`,
+            partNumber,
+            totalParts: totalBatches,
+            startRecord: batchStart + 1,
+            endRecord: batchEnd,
+            count: batchCount,
+            url,
+            filename,
+            size,
+          });
+
+          // Trigger download of this part
+          saveAs(blob, filename);
+
+          // Small yield between batch downloads
+          await new Promise((r) => setTimeout(r, 250));
         }
 
-        setProgress({ current: total, total, status: 'zipping' });
-        const blob = await zip.generateAsync({
-          type: 'blob',
-          compression: 'DEFLATE',
-          compressionOptions: { level: 6 },
+        setProgress({
+          current: total,
+          total,
+          currentBatch: totalBatches,
+          totalBatches,
+          status: 'done',
         });
-
-        const filename = `bulk_certificates_${Date.now()}.zip`;
-        const blobUrl = URL.createObjectURL(blob);
-        const humanSize = formatBytes(blob.size);
-
-        setDownloadResult(blobUrl, filename, humanSize);
-        setProgress({ current: total, total, status: 'done' });
-
-        // Auto trigger download for zero-friction
-        saveAs(blob, filename);
       } catch (err) {
         console.error('PDF Bulk generation error:', err);
         setProgress({
           current: 0,
           total,
+          currentBatch: 0,
+          totalBatches,
           status: 'error',
           error: err instanceof Error ? err.message : 'Generation failed unexpectedly',
         });
       }
     },
-    [template, records, placements, customFonts, setProgress, setDownloadResult, purgeGenerationOnly],
+    [
+      template,
+      records,
+      placements,
+      customFonts,
+      splitBatchSize,
+      setProgress,
+      addDownloadBatch,
+      purgeGenerationOnly,
+    ],
   );
 
   return { generate };

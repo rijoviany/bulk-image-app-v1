@@ -29,9 +29,23 @@ export interface TemplateData {
   height: number;
 }
 
+export interface DownloadBatch {
+  id: string;
+  partNumber: number;
+  totalParts: number;
+  startRecord: number;
+  endRecord: number;
+  count: number;
+  url: string;
+  filename: string;
+  size: string;
+}
+
 export interface GenerationProgress {
   current: number;
   total: number;
+  currentBatch: number;
+  totalBatches: number;
   status: 'idle' | 'generating' | 'zipping' | 'done' | 'error';
   error?: string;
 }
