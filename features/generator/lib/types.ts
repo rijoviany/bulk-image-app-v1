@@ -46,7 +46,7 @@ export interface GenerationProgress {
   total: number;
   currentBatch: number;
   totalBatches: number;
-  status: 'idle' | 'generating' | 'zipping' | 'done' | 'error';
+  status: 'idle' | 'generating' | 'zipping' | 'done' | 'error' | 'cancelled';
   error?: string;
 }
 

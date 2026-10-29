@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { renderSinglePdf } from '../lib/pdf-engine';
@@ -26,12 +26,33 @@ export function usePdfGenerator() {
     purgeGenerationOnly,
   } = useTemplateStore();
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [isGeneratingSample, setIsGeneratingSample] = useState(false);
+
+  const cancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setProgress({
+      current: 0,
+      total: records.length,
+      currentBatch: 0,
+      totalBatches: 0,
+      status: 'cancelled',
+    });
+  }, [records.length, setProgress]);
+
   const generate = useCallback(
     async (canvasWidth: number, canvasHeight: number) => {
       if (!template || records.length === 0 || placements.length === 0) return;
 
       // Automatically purge previous generation blobs before creating new ones
       purgeGenerationOnly();
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const { signal } = controller;
 
       const total = records.length;
       // Default to 250 records per ZIP
@@ -63,6 +84,17 @@ export function usePdfGenerator() {
         let overallProcessed = 0;
 
         for (let b = 0; b < totalBatches; b++) {
+          if (signal.aborted) {
+            setProgress({
+              current: overallProcessed,
+              total,
+              currentBatch: b + 1,
+              totalBatches,
+              status: 'cancelled',
+            });
+            return;
+          }
+
           const batchStart = b * batchSize;
           const batchEnd = Math.min(batchStart + batchSize, total);
           const batchRecords = records.slice(batchStart, batchEnd);
@@ -72,12 +104,34 @@ export function usePdfGenerator() {
           const zip = new JSZip();
 
           for (let i = 0; i < batchCount; i += CHUNK) {
+            if (signal.aborted) {
+              setProgress({
+                current: overallProcessed,
+                total,
+                currentBatch: partNumber,
+                totalBatches,
+                status: 'cancelled',
+              });
+              return;
+            }
+
             const subChunk = batchRecords.slice(i, i + CHUNK);
             const pdfs = await Promise.all(
               subChunk.map((record) =>
                 renderSinglePdf(template, record, placements, customFonts, canvasWidth, canvasHeight),
               ),
             );
+
+            if (signal.aborted) {
+              setProgress({
+                current: overallProcessed,
+                total,
+                currentBatch: partNumber,
+                totalBatches,
+                status: 'cancelled',
+              });
+              return;
+            }
 
             pdfs.forEach((bytes, j) => {
               const globalIdx = batchStart + i + j;
@@ -102,6 +156,17 @@ export function usePdfGenerator() {
             await new Promise((r) => setTimeout(r, 10));
           }
 
+          if (signal.aborted) {
+            setProgress({
+              current: overallProcessed,
+              total,
+              currentBatch: partNumber,
+              totalBatches,
+              status: 'cancelled',
+            });
+            return;
+          }
+
           // Compressing this batch into ZIP
           setProgress({
             current: overallProcessed,
@@ -116,6 +181,17 @@ export function usePdfGenerator() {
             compression: 'DEFLATE',
             compressionOptions: { level: 6 },
           });
+
+          if (signal.aborted) {
+            setProgress({
+              current: overallProcessed,
+              total,
+              currentBatch: partNumber,
+              totalBatches,
+              status: 'cancelled',
+            });
+            return;
+          }
 
           const filename =
             totalBatches > 1
@@ -146,14 +222,17 @@ export function usePdfGenerator() {
           await new Promise((r) => setTimeout(r, 150));
         }
 
-        setProgress({
-          current: total,
-          total,
-          currentBatch: totalBatches,
-          totalBatches,
-          status: 'done',
-        });
+        if (!signal.aborted) {
+          setProgress({
+            current: total,
+            total,
+            currentBatch: totalBatches,
+            totalBatches,
+            status: 'done',
+          });
+        }
       } catch (err) {
+        if (signal.aborted) return;
         console.error('PDF Bulk generation error:', err);
         setProgress({
           current: 0,
@@ -172,6 +251,7 @@ export function usePdfGenerator() {
             // Ignore
           }
         }
+        abortControllerRef.current = null;
       }
     },
     [
@@ -186,5 +266,59 @@ export function usePdfGenerator() {
     ],
   );
 
-  return { generate };
+  const generateSample = useCallback(
+    async (canvasWidth: number, canvasHeight: number, sampleCount = 5) => {
+      if (!template || records.length === 0 || placements.length === 0) return null;
+
+      setIsGeneratingSample(true);
+      try {
+        const count = Math.min(sampleCount, records.length);
+        const chosenIndices = new Set<number>();
+        while (chosenIndices.size < count) {
+          chosenIndices.add(Math.floor(Math.random() * records.length));
+        }
+        const sampleIndices = Array.from(chosenIndices);
+        const sampleRecords = sampleIndices.map((idx) => ({ record: records[idx], index: idx }));
+
+        const zip = new JSZip();
+        const sampledNames: string[] = [];
+
+        for (const { record, index } of sampleRecords) {
+          const pdfBytes = await renderSinglePdf(
+            template,
+            record,
+            placements,
+            customFonts,
+            canvasWidth,
+            canvasHeight,
+          );
+
+          const firstKey = Object.keys(record)[0];
+          const rawVal = cleanText(record[firstKey]) || `sample_${index + 1}`;
+          sampledNames.push(String(rawVal));
+          const label = String(rawVal).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 32);
+          zip.file(`${label}_sample_${index + 1}.pdf`, pdfBytes);
+        }
+
+        const blob = await zip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 },
+        });
+
+        const filename = `sample_${count}_random_recipients.zip`;
+        saveAs(blob, filename);
+
+        return { count, sampledNames, filename };
+      } catch (err) {
+        console.error('Sample generation error:', err);
+        throw err;
+      } finally {
+        setIsGeneratingSample(false);
+      }
+    },
+    [template, records, placements, customFonts],
+  );
+
+  return { generate, cancel, generateSample, isGeneratingSample };
 }

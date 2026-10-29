@@ -54,10 +54,17 @@ async function embedFonts(
     const curatedBuffer = await getFontBuffer(name);
     if (curatedBuffer) {
       try {
-        cache[name] = await doc.embedFont(curatedBuffer);
+        // Enforce subset: true to prevent "Trying to access beyond buffer length" in fontkit
+        cache[name] = await doc.embedFont(curatedBuffer, { subset: true });
         continue;
       } catch (err) {
-        console.warn(`Failed to embed curated font "${name}"`, err);
+        console.warn(`Failed to embed curated font "${name}" with subsetting:`, err);
+        try {
+          cache[name] = await doc.embedFont(curatedBuffer);
+          continue;
+        } catch (err2) {
+          console.warn(`Failed to embed curated font "${name}" without subsetting:`, err2);
+        }
       }
     }
 
@@ -65,10 +72,17 @@ async function embedFonts(
     const custom = customFonts.find((f) => f.name === name);
     if (custom) {
       try {
-        cache[name] = await doc.embedFont(custom.data.slice(0));
+        // Enforce subset: true for custom uploaded fonts as well
+        cache[name] = await doc.embedFont(custom.data.slice(0), { subset: true });
         continue;
       } catch (err) {
-        console.warn(`Failed to embed custom font "${name}", falling back to Helvetica`, err);
+        console.warn(`Failed to embed custom font "${name}" with subsetting:`, err);
+        try {
+          cache[name] = await doc.embedFont(custom.data.slice(0));
+          continue;
+        } catch (err2) {
+          console.warn(`Failed to embed custom font "${name}", falling back to Helvetica`, err2);
+        }
       }
     }
 
@@ -76,6 +90,69 @@ async function embedFonts(
     cache[name] = await doc.embedFont(StandardFonts.Helvetica);
   }
   return cache;
+}
+
+/** Fallback renderer using universal Helvetica if custom font writing fails during doc.save() */
+async function renderFallbackPdf(
+  template: TemplateData,
+  record: CsvRecord,
+  placements: FieldPlacement[],
+  canvasWidth: number,
+  canvasHeight: number,
+): Promise<Uint8Array> {
+  let doc: PDFDocument;
+  let page: PDFPage;
+  let pdfWidth: number;
+  let pdfHeight: number;
+
+  const bytesClone = template.bytes.slice(0);
+  if (template.type === 'pdf') {
+    doc = await PDFDocument.load(bytesClone);
+    page = doc.getPages()[0];
+    pdfWidth = page.getWidth();
+    pdfHeight = page.getHeight();
+  } else {
+    doc = await PDFDocument.create();
+    const header = new Uint8Array(bytesClone.slice(0, 4));
+    const isPng =
+      header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47;
+    const img = isPng ? await doc.embedPng(bytesClone) : await doc.embedJpg(bytesClone);
+    pdfWidth = img.width;
+    pdfHeight = img.height;
+    page = doc.addPage([pdfWidth, pdfHeight]);
+    page.drawImage(img, { x: 0, y: 0, width: pdfWidth, height: pdfHeight });
+  }
+
+  const scaleX = pdfWidth / canvasWidth;
+  const scaleY = pdfHeight / canvasHeight;
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+
+  for (const pl of placements) {
+    const rawText = String(record[pl.field] ?? '');
+    const text = sanitizeForFont(rawText, font);
+    const size = pl.fontSize * scaleY;
+
+    let x = pl.x * scaleX;
+    const y = pdfHeight - pl.y * scaleY - size;
+
+    if (pl.align === 'center') {
+      const textWidth = font.widthOfTextAtSize(text, size);
+      x -= textWidth / 2;
+    } else if (pl.align === 'right') {
+      const textWidth = font.widthOfTextAtSize(text, size);
+      x -= textWidth;
+    }
+
+    page.drawText(text, {
+      x,
+      y,
+      size,
+      font,
+      color: hexToRgb(pl.color),
+    });
+  }
+
+  return doc.save();
 }
 
 /** Render a single record to a PDF and return raw bytes */
@@ -156,5 +233,13 @@ export async function renderSinglePdf(
     });
   }
 
-  return doc.save();
+  try {
+    return await doc.save();
+  } catch (saveErr) {
+    console.warn(
+      'doc.save() encountered font table writing error; falling back to safe standard font:',
+      saveErr,
+    );
+    return renderFallbackPdf(template, record, placements, canvasWidth, canvasHeight);
+  }
 }
