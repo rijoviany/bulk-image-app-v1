@@ -38,6 +38,17 @@ export function usePdfGenerator() {
       const batchSize = Math.max(1, splitBatchSize || 250);
       const totalBatches = Math.ceil(total / batchSize);
 
+      // Acquire Screen Wake Lock if supported so mobile/tablet screen stays awake during generation
+      let wakeLock: unknown = null;
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        } catch {
+          // Ignore wake lock failure (not critical)
+        }
+      }
+
       setProgress({
         current: 0,
         total,
@@ -126,11 +137,13 @@ export function usePdfGenerator() {
             size,
           });
 
-          // Trigger download of this part
-          saveAs(blob, filename);
+          // If single batch, auto-download. If multi-batch, auto-download Part 1 so user has immediate confirmation
+          if (b === 0) {
+            saveAs(blob, filename);
+          }
 
           // Small yield between batch downloads
-          await new Promise((r) => setTimeout(r, 250));
+          await new Promise((r) => setTimeout(r, 150));
         }
 
         setProgress({
@@ -150,6 +163,15 @@ export function usePdfGenerator() {
           status: 'error',
           error: err instanceof Error ? err.message : 'Generation failed unexpectedly',
         });
+      } finally {
+        if (wakeLock) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (wakeLock as any).release();
+          } catch {
+            // Ignore
+          }
+        }
       }
     },
     [

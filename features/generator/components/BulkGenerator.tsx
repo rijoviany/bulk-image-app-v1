@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTemplateStore } from '../hooks/useTemplateStore';
 import { usePdfGenerator } from '../hooks/usePdfGenerator';
+import { saveAs } from 'file-saver';
 
 export function BulkGenerator() {
   const {
@@ -19,6 +20,8 @@ export function BulkGenerator() {
 
   const { generate } = usePdfGenerator();
   const [notification, setNotification] = useState<string | null>(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadAllProgress, setDownloadAllProgress] = useState<string | null>(null);
 
   const canGenerate = Boolean(template && records.length > 0 && placements.length > 0);
 
@@ -44,6 +47,28 @@ export function BulkGenerator() {
     purgeAllData();
     setNotification('✓ All session data, templates, CSVs, and generated files have been purged.');
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  const handleDownloadAllSequentially = async () => {
+    if (downloadBatches.length === 0 || downloadingAll) return;
+    setDownloadingAll(true);
+
+    for (let i = 0; i < downloadBatches.length; i++) {
+      const batch = downloadBatches[i];
+      setDownloadAllProgress(`Downloading Part ${batch.partNumber} of ${batch.totalParts}...`);
+      try {
+        const res = await fetch(batch.url);
+        const blob = await res.blob();
+        saveAs(blob, batch.filename);
+      } catch (err) {
+        console.error('Download error for batch:', batch.filename, err);
+      }
+      // 1.2s delay between downloads prevents browser multi-download blocking
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+
+    setDownloadAllProgress(null);
+    setDownloadingAll(false);
   };
 
   const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
@@ -72,7 +97,7 @@ export function BulkGenerator() {
           <button
             type="button"
             onClick={() => setNotification(null)}
-            className="text-emerald-700 hover:text-emerald-900 font-bold px-1"
+            className="text-emerald-700 hover:text-emerald-900 font-bold px-1 cursor-pointer"
           >
             ×
           </button>
@@ -113,7 +138,7 @@ export function BulkGenerator() {
             value={splitBatchSize}
             onChange={(e) => setSplitBatchSize(Number(e.target.value))}
             disabled={isGenerating}
-            className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-2xs focus:border-blue-500 focus:outline-hidden"
+            className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-2xs focus:border-blue-500 focus:outline-hidden cursor-pointer"
           >
             <option value={100}>100 names per ZIP</option>
             <option value={250}>250 names per ZIP (Recommended)</option>
@@ -167,7 +192,7 @@ export function BulkGenerator() {
         {/* Download Batches Card */}
         {progress.status === 'done' && downloadBatches.length > 0 && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
                   READY FOR DOWNLOAD
@@ -178,6 +203,20 @@ export function BulkGenerator() {
                     : `${downloadBatches.length} Split ZIP Archives Ready (${records.length} Total PDFs)`}
                 </p>
               </div>
+
+              {downloadBatches.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadAllSequentially}
+                  disabled={downloadingAll}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer self-start sm:self-auto"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {downloadAllProgress || `Download All ${downloadBatches.length} ZIP Parts`}
+                </button>
+              )}
             </div>
 
             {/* List of Batches */}
@@ -199,7 +238,7 @@ export function BulkGenerator() {
                   <a
                     href={batch.url}
                     download={batch.filename}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors shrink-0 cursor-pointer"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -259,7 +298,7 @@ export function BulkGenerator() {
                   Generating {records.length} Bulk PDFs ({totalBatchesExpected} {totalBatchesExpected === 1 ? 'part' : 'split parts'})...
                 </span>
               ) : (
-                `Generate ${records.length} Personalized PDFs (${totalBatchesExpected} ${totalBatchesExpected === 1 ? 'ZIP' : 'Split ZIPs of 250'})`
+                `Generate ${records.length} Personalized PDFs (${totalBatchesExpected} ${totalBatchesExpected === 1 ? 'ZIP' : 'Split ZIPs of ' + splitBatchSize})`
               )}
             </button>
 
@@ -277,7 +316,7 @@ export function BulkGenerator() {
         <div className="rounded-xl border border-neutral-100 bg-neutral-50/60 p-4 text-xs text-neutral-500 space-y-1">
           <p className="font-semibold text-neutral-700">🔒 Smart Batching & Zero-Server Deployment</p>
           <p>
-            Large recipient lists are split into clean batches of 250 to ensure maximum speed and stability across phones, tablets, and laptops. All special Unicode characters and invisible spreadsheet markers are sanitized automatically.
+            Large recipient lists (up to 2,000+ records) are split into clean batches of 250 to ensure maximum speed and stability across phones, tablets, and laptops. All special Unicode characters and invisible spreadsheet markers are sanitized automatically.
           </p>
         </div>
       </div>
